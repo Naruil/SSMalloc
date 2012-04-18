@@ -17,7 +17,6 @@
 #include "bitops.h"
 #include "queue.h"
 #include "double-list.h"
-#include "counted-list.h"
 #include "cpuid.h"
 
 /* Machine related */
@@ -59,32 +58,34 @@
 
 /* Multi consumer queue */
 #define queue_init(head)\
-    lf_lifo_queue_init(head)
+    mc_queue_init(head)
 #define queue_put(head,elem)\
-    lf_lifo_enqueue(head,elem)
+    mc_enqueue(head,elem)
 #define queue_fetch(head)\
-    lf_lifo_dequeue(head)
-typedef lf_lifo_queue_t Queue;
+    mc_dequeue(head)
+typedef queue_head_t Queue;
 
 /* Single consumer queue */
 #define fast_queue_init(head)\
-    lf_lifo_queue_init_nABA(head)
+    sc_queue_init(head)
 #define fast_queue_put(head,elem)\
-    lf_lifo_enqueue_nABA(head,elem)
+    sc_enqueue(head,elem)
 #define fast_queue_fetch(head)\
-    lf_lifo_dequeue_nABA(head)
+    sc_dequeue(head)
 #define fast_queue_chain_fetch(head)\
-    lf_lifo_chain_dequeue_nABA(head)
-typedef volatile struct queue_elem_t *FastQueue;
+    sc_chain_dequeue(head)
+typedef queue_head_t FastQueue;
 
 /* Sequencial queue */
 #define seq_queue_init(head)\
-    seq_lifo_queue_init(head)
+    seq_queue_init(head)
 #define seq_queue_put(head,elem)\
-    seq_lifo_enqueue(head,elem)
+    seq_enqueue(head,elem)
 #define seq_queue_fetch(head)\
-    seq_lifo_dequeue(head)
-typedef struct queue_elem_t *SeqQueue;
+    seq_dequeue(head)
+#define fast_queue_chain_put(head)\
+    seq_chain_enqueue(head)
+typedef seq_queue_head_t SeqQueue;
 
 /* Type definations */
 typedef enum {
@@ -137,7 +138,7 @@ struct dchunk_s {
     char *free_mem;
 
     /* Remote Write Area */
-     CACHE_ALIGN FastQueue * remote_free_head;
+     CACHE_ALIGN FastQueue remote_free_head;
 };
 
 struct gpool_s {

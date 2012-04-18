@@ -225,7 +225,7 @@ static void gpool_init()
     global_pool.pool_start = _MEM_START;
     global_pool.pool_end = _MEM_START;
     global_pool.free_start = RAW_POOL_START;
-    queue_init(&global_pool.free_dc_head);
+    //queue_init(&global_pool.free_dc_head);
     pthread_mutex_init(&global_pool.lock, NULL);
     gpool_grow();
 }
@@ -259,7 +259,7 @@ inline static chunk_t *gpool_acquire_chunk()
     return (chunk_t *) ptr;
 }
 
-inline static void *gpool_make_raw_chunk()
+static void *gpool_make_raw_chunk()
 {
     /* Atomic increse the global pool size */
     void *ret = (void *)(atmc_fetch_and_add64((unsigned long long *)
@@ -368,7 +368,7 @@ inline static void dchunk_init(dchunk_t * dc, int size_cls)
 
 inline static void dchunk_collect_garbage(dchunk_t * dc)
 {
-    dc->free_head =
+    seq_head(dc->free_head) =
         counted_chain_dequeue(&dc->remote_free_head, &dc->free_blk_cnt);
 }
 
@@ -377,14 +377,13 @@ inline static void *dchunk_alloc_obj(dchunk_t * dc)
     void *ret;
 
     /* Dirty implementation of dequeue, avoid one branch */
-    struct queue_elem_t *top = dc->free_head;
-    ret = (void *)top;
+    ret = seq_head(dc->free_head);
 
     if (unlikely(!ret)) {
         ret = dc->free_mem;
         dc->free_mem += dc->block_size;
     } else {
-        dc->free_head = *(SeqQueue *) top;
+        seq_head(dc->free_head) = *(void**)ret;
     }
 
 #if 0
@@ -412,11 +411,11 @@ inline static void obj_buf_flush(obj_buf_t * bbuf)
     lheap_t *lh = dc->owner;
 
     prev = counted_chain_enqueue(&(dc->remote_free_head),
-                                 bbuf->free_head, bbuf->first, bbuf->count);
+                                 seq_head(bbuf->free_head), bbuf->first, bbuf->count);
     bbuf->count = 0;
     bbuf->dc = NULL;
     bbuf->first = NULL;
-    bbuf->free_head = NULL;
+    seq_head(bbuf->free_head) = NULL;
 
     /* If I am the first thread done remote free in this memory chunk*/
     if ((unsigned long long)prev == 0L) {
@@ -444,7 +443,7 @@ inline static void obj_buf_put(obj_buf_t *bbuf, dchunk_t * dc, void *ptr) {
         bbuf->dc = dc;
         bbuf->first = ptr;
         bbuf->count = 0;
-        bbuf->free_head = NULL;
+        seq_head(bbuf->free_head) = NULL;
     }
 
     seq_queue_put(&bbuf->free_head, ptr);
@@ -540,7 +539,7 @@ inline static void remote_free(lheap_t * lh, dchunk_t * dc, void *ptr)
     }
 }
 
-inline static void touch_memory_range(void *addr, size_t len)
+static void touch_memory_range(void *addr, size_t len)
 {
     char *ptr = (char *)addr;
     char *end = ptr + len;
