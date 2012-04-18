@@ -1,0 +1,25 @@
+SSMalloc
+========
+
+ SSMalloc is a low-latency, locality-conscious memory 
+ allocator with stable performance scalability. 
+
+
+Compilation & Install
+=====================
+
+ SSMalloc requires libtool for compilation.
+ In the SSMalloc directory, type:
+
+ $ make
+ $ make install
+
+
+Usage
+=====
+ Use libssmalloc.a for static linking. If you want to 
+ dynamically link SSMalloc into your program. Please 
+ set the LD_PRELOAD environment variable as below.
+
+ $export LD_PRELOAD=(path)/libssmalloc.so
+
