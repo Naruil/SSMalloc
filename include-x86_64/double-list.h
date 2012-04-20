@@ -1,3 +1,6 @@
+#ifndef __DOUBLE_LIST_H_
+#define __DOUBLE_LIST_H_
+
 typedef struct double_list_elem		double_list_elem_t;
 typedef struct double_list		        double_list_t;
 
@@ -31,28 +34,6 @@ static void double_list_insert_front(void* new_node, double_list_t* list)
 	list->head = elem_new;
 }
 
-/* Moves head to the back. */
-static void double_list_rotate_back(double_list_t* list)
-{
-	double_list_elem_t* old_head = list->head;
-	double_list_elem_t* old_tail = list->tail;
-	double_list_elem_t* new_head = NULL;
-
-	if (old_head == old_tail) {
-		return;
-	}
-
-	new_head = old_head->next;
-
-	new_head->prev = NULL;
-	old_tail->next = old_head;
-	old_head->prev = old_tail;
-	old_head->next = NULL;
-	
-	list->head = new_head;
-	list->tail = old_head;
-}
-
 /* Removes node from the list. */
 static void double_list_remove(void* node, double_list_t* list)
 {
@@ -79,3 +60,5 @@ static void double_list_remove(void* node, double_list_t* list)
 		list->head = list->tail;
 	}
 }
+
+#endif

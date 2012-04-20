@@ -1,9 +1,6 @@
 #define _GNU_SOURCE
 #include "ssmalloc.h"
 
-// #define RETURN_MEMORY
-// #define DEBUG
-
 /* Global metadata */
 init_state global_state = UNINITIALIZED;
 gpool_t global_pool;
@@ -54,7 +51,7 @@ inline static void obj_buf_put(obj_buf_t *bbuf, dchunk_t * dc, void *ptr);
 
 /* Allocator helpers */
 inline static void *large_malloc(size_t size);
-inline static void *small_malloc(size_t size, int size_cls);
+inline static void *small_malloc(int size_cls);
 inline static void large_free(void *ptr);
 inline static void local_free(lheap_t *lh, dchunk_t *dc, void *ptr);
 inline static void remote_free(lheap_t *lh, dchunk_t *dc, void *ptr);
@@ -226,8 +223,8 @@ static int gpool_grow()
 /* Initialize the global memory pool */
 static void gpool_init()
 {
-    global_pool.pool_start = _MEM_START;
-    global_pool.pool_end = _MEM_START;
+    global_pool.pool_start = RAW_POOL_START;
+    global_pool.pool_end = RAW_POOL_START;
     global_pool.free_start = RAW_POOL_START;
     //queue_init(&global_pool.free_dc_head);
     pthread_mutex_init(&global_pool.lock, NULL);
@@ -475,7 +472,7 @@ inline static void *large_malloc(size_t size)
     return ret;
 }
 
-inline static void *small_malloc(size_t size, int size_cls)
+inline static void *small_malloc(int size_cls)
 {
     lheap_t *lh = local_heap;
     dchunk_t *dc;
@@ -653,7 +650,7 @@ void *malloc(size_t size)
 
     int size_cls = size2cls(size);
     if (likely(size_cls < DEFAULT_BLOCK_CLASS)) {
-        ret = small_malloc(size, size_cls);
+        ret = small_malloc(size_cls);
     } else {
         ret = large_malloc(size);
     }
@@ -758,7 +755,7 @@ void *memalign(size_t boundary, size_t size) {
         int boundary_cls = size2cls(boundary);
         int size_cls = size2cls(size);
         int alloc_cls = max(boundary_cls, size_cls);
-        return small_malloc(size, alloc_cls);
+        return small_malloc(alloc_cls);
     } else {
         /* Handle it as a special large allocation */
         return large_memalign(boundary, size);

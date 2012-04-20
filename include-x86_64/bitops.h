@@ -1,5 +1,5 @@
-#ifndef _X86_64_BITOPS_H
-#define _X86_64_BITOPS_H
+#ifndef __X86_64_BITOPS_H_
+#define __X86_64_BITOPS_H_
 
 /*
  * Copyright 1992, Linus Torvalds.

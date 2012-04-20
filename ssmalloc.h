@@ -17,44 +17,37 @@
 #include "bitops.h"
 #include "queue.h"
 #include "double-list.h"
-#include "cpuid.h"
-
-/* Machine related */
-#define PAGE_SIZE           (4096)
-#define SUPER_PAGE_SIZE     (4*1024*1024)
-#define CACHE_LINE_SIZE     (64)
-#define DEFAULT_BLOCK_CLASS (100)
-#define MAX_CORE_ID         (8)
+#include "cpu.h"
 
 /* Configurations */
 #define CHUNK_DATA_SIZE     (16*PAGE_SIZE)
-#define CHUNK_SIZE          (CHUNK_DATA_SIZE+sizeof(dchunk_t))
-#define CHUNK_MASK          (~(CHUNK_SIZE-1))
-#define _MEM_START          ((void*)0x600000000000)
-#define RAW_POOL_START      ((void*)((0x600000000000/CHUNK_SIZE+1)*CHUNK_SIZE))
-#define RAW_POOL_TOP        ((void*)0x700000000000)
+#define ALLOC_UNIT          (4*1024*1024)
 #define MAX_FREE_SIZE       (4*1024*1024)
-#define MAX_FREE_CHUNK      (MAX_FREE_SIZE/CHUNK_SIZE)
+#define RAW_POOL_START      ((void*)((0x600000000000/CHUNK_SIZE+1)*CHUNK_SIZE))
 #define BLOCK_BUF_CNT       (16)
 
+// #define RETURN_MEMORY
+// #define DEBUG
+
 /* Other */
+#define CHUNK_SIZE          (CHUNK_DATA_SIZE+sizeof(dchunk_t))
+#define CHUNK_MASK          (~(CHUNK_SIZE-1))
 #define LARGE_CLASS         (100)
 #define DUMMY_CLASS         (101)
+#define DCH                 (sizeof(dchunk_t))
+#define MAX_FREE_CHUNK      (MAX_FREE_SIZE/CHUNK_SIZE)
+#define LARGE_OWNER         ((void*)0xDEAD)
+#define ACTIVE              ((void*)1)
+
+/* Utility Macros */
 #define ROUNDUP(x,n)        ((x+n-1)&(~(n-1)))
 #define ROUNDDOWN(x,n)      (((x-n)&(~(n-1)))+1)
 #define PAGE_ROUNDUP(x)     (ROUNDUP((uintptr_t)x,PAGE_SIZE))
 #define PAGE_ROUNDDOWN(x)   (ROUNDDOWN((uintptr_t)x,PAGE_SIZE))
-#define DCH                 sizeof(dchunk_t)
-
-/* Other Macros */
-#define ALLOC_UNIT (4 * 1024 * 1024)
-#define LARGE_OWNER ((void*)0xDEAD)
 #define CACHE_ALIGN __attribute__ ((aligned (CACHE_LINE_SIZE)))
-#define ACTIVE ((void*)1)
 #define THREAD_LOCAL __attribute__ ((tls_model ("initial-exec"))) __thread
-
-#define likely(x)       __builtin_expect(!!(x),1)
-#define unlikely(x)     __builtin_expect(!!(x),0)
+#define likely(x)           __builtin_expect(!!(x),1)
+#define unlikely(x)         __builtin_expect(!!(x),0)
 
 /* Multi consumer queue */
 #define queue_init(head)\
