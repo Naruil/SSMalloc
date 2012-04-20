@@ -20,20 +20,20 @@ THREAD_LOCAL init_state thread_state = UNINITIALIZED;
 THREAD_LOCAL lheap_t *local_heap = NULL;
 
 /* System init functions */
-static void maps_init();
-static void thread_init();
-static void thread_exit();
-static void global_init();
-inline static void check_init();
+static void maps_init(void);
+static void thread_init(void);
+static void thread_exit(void *dummy);
+static void global_init(void);
+inline static void check_init(void);
 
 /* Global pool management functions */
 inline static void gpool_check_size(void *target);
-static int gpool_grow();
-static void gpool_init();
-static void *gpool_make_raw_chunk();
-inline static chunk_t *gpool_acquire_chunk();
+static int gpool_grow(void);
+static void gpool_init(void);
+static void *gpool_make_raw_chunk(void);
+inline static chunk_t *gpool_acquire_chunk(void);
 inline static void gpool_release_chunk(dchunk_t *dc);
-static lheap_t *gpool_acquire_lheap();
+static lheap_t *gpool_acquire_lheap(void);
 static void gpool_release_lheap(lheap_t *lh);
 
 /* Local heap management functions */
@@ -58,9 +58,11 @@ inline static void *small_malloc(size_t size, int size_cls);
 inline static void large_free(void *ptr);
 inline static void local_free(lheap_t *lh, dchunk_t *dc, void *ptr);
 inline static void remote_free(lheap_t *lh, dchunk_t *dc, void *ptr);
+static void *large_memalign(size_t boundary, size_t size);
 
 /* Misc functions */
 static void* page_alloc(void *pos, size_t size);
+static void page_free(void *pos, size_t size);
 static void touch_memory_range(void *start, size_t len); 
 inline static int size2cls(size_t size);
 
@@ -129,12 +131,14 @@ static void maps_init()
     int cur_class = 0;
     int cur_size = 0;
 
+    /* init sizemap */
     for (cur_size = 4; cur_size <= 1024; cur_size += 4) {
         if (cur_size > cls2size[cur_class])
             cur_class++;
         sizemap[(cur_size - 1) >> 2] = cur_class;
     }
-
+    
+    /* init sizemap2 */
     for (cur_size = 1024; cur_size <= 65536; cur_size += 512) {
         if (cur_size > cls2size[cur_class])
             cur_class++;
@@ -362,7 +366,6 @@ inline static void dchunk_init(dchunk_t * dc, int size_cls)
 {
     dc->active_link.next = NULL;
     dc->active_link.prev = NULL;
-    dc->next_dc = NULL;
     dchunk_change_cls(dc, size_cls);
 }
 
@@ -450,16 +453,26 @@ inline static void obj_buf_put(obj_buf_t *bbuf, dchunk_t * dc, void *ptr) {
     bbuf->count++;
 }
 
-
-/* Alloc a large amount of memory */
 inline static void *large_malloc(size_t size)
 {
-    size += sizeof(struct large_header);
-    void *ret = page_alloc(NULL, (size_t)PAGE_ROUNDUP(size));
-    struct large_header *header = (struct large_header *)ret;
-    header->size = (size_t)PAGE_ROUNDUP(size);
-    header->owner = (void *)0xDEAD;
-    return header + 1;
+    size_t alloc_size = PAGE_ROUNDUP(size + CHUNK_SIZE);
+    void *mem = page_alloc(NULL, alloc_size);
+    void *mem_start = (char*)mem + CHUNK_SIZE - CACHE_LINE_SIZE;
+    large_header_t *header = (large_header_t *)dchunk_extract(mem_start);
+
+    /* If space is enough for the header of a large block */
+    intptr_t distance = (intptr_t)mem_start - (intptr_t)header;
+    if (distance >= sizeof(large_header_t)) {
+        header->alloc_size = alloc_size;
+        header->mem = mem;
+        header->owner = LARGE_OWNER;
+        return mem_start;
+    }
+
+    /* If not, Retry Allocation */
+    void *ret = large_malloc(size);
+    page_free(mem, alloc_size);
+    return ret;
 }
 
 inline static void *small_malloc(size_t size, int size_cls)
@@ -485,14 +498,10 @@ inline static void *small_malloc(size_t size, int size_cls)
     return ret;
 }
 
-
-/* Free a large amount of memory */
 inline static void large_free(void *ptr)
 {
-    if (ptr == NULL)
-        return;
-    struct large_header *header = ((struct large_header *)ptr) - 1;
-    munmap(header, header->size);
+    large_header_t *header = (large_header_t*)dchunk_extract(ptr);
+    page_free(header->mem, header->alloc_size);
 }
 
 inline static void local_free(lheap_t * lh, dchunk_t * dc, void *ptr)
@@ -527,7 +536,6 @@ inline static void local_free(lheap_t * lh, dchunk_t * dc, void *ptr)
 THREAD_LOCAL int buf_cnt;
 inline static void remote_free(lheap_t * lh, dchunk_t * dc, void *ptr)
 {
-
     /* Put the object in a local buffer rather than return it to owner */
     int tag = ((unsigned long long)dc / CHUNK_SIZE) % BLOCK_BUF_CNT;
     obj_buf_t *bbuf = &lh->block_bufs[tag];
@@ -547,6 +555,42 @@ static void touch_memory_range(void *addr, size_t len)
     for (; ptr < end; ptr += PAGE_SIZE) {
         *ptr = 0;
     }
+}
+
+static void *large_memalign(size_t boundary, size_t size) {
+    /* Alloc a large enough memory block */
+    size_t padding = boundary + CHUNK_SIZE;
+    size_t alloc_size = PAGE_ROUNDUP(size + padding);
+    void *mem = page_alloc(NULL, alloc_size);
+
+    /* Align up the address to boundary */
+    void *mem_start = 
+        (void*)((uintptr_t)((char*)mem + padding) & ~(boundary - 1));
+
+    /* Extract space for an header */
+    large_header_t *header = 
+        (large_header_t *)dchunk_extract(mem_start);
+
+    /* If space is enough for the header of a large block */
+    intptr_t distance = (intptr_t)mem_start - (intptr_t)header;
+    if (distance >= sizeof(large_header_t)) {
+        header->alloc_size = alloc_size;
+        header->mem = mem;
+        header->owner = LARGE_OWNER;
+        return mem_start;
+    }
+
+    /* If not, retry allocation */
+    void *ret = NULL;
+
+    /* Avoid infinite loop if application call memalign(CHUNK_SIZE,size),
+     * althrough it is actually illegal
+     */
+    if (boundary % CHUNK_SIZE != 0) {
+        ret = large_memalign(boundary, size);
+    }
+    page_free(mem, alloc_size);
+    return ret;
 }
 
 #ifdef DEBUG
@@ -572,6 +616,11 @@ static void *page_alloc(void *pos, size_t size)
                 size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 }
 
+static void page_free(void *pos, size_t size)
+{   
+    munmap(pos, size);
+}
+
 inline static int size2cls(size_t size)
 {
     int ret;
@@ -585,8 +634,6 @@ inline static int size2cls(size_t size)
     return ret;
 }
 
-
-
 void *malloc(size_t size)
 {
     void *ret = NULL;
@@ -595,7 +642,7 @@ void *malloc(size_t size)
     check_init();
 
     /* Deal with zero-size allocation */
-    size += size == 0;
+    size += (size == 0);
 
 #if 0
     /* The expression above is equivalent to the code below */
@@ -613,46 +660,41 @@ void *malloc(size_t size)
     return ret;
 }
 
-#if 0
-inline static void remote_free(local_heap_t * lh, data_chunk_t * dc, void *ptr)
-{
-    void *prev;
-    prev = counted_enqueue(&(dc->remote_free_head), ptr);
-    if ((unsigned long long)prev == 0L) {
-        fast_queue_put(&(lh->need_gc[dc->chunk_type]), dc);
-    }
-    return;
-}
-#endif
-
-inline static int is_small_object(void* ptr)
-{
-    return (ptr > RAW_POOL_START) & (ptr < RAW_POOL_TOP);
-}
-
 void free(void *ptr)
 {
-    if (likely(is_small_object(ptr))) {
-        dchunk_t *dc = dchunk_extract(ptr);
-        lheap_t *lh = local_heap;
-        lheap_t *target_lh = dc->owner;
+    if(ptr == NULL) {
+        return;
+    }
 
-        if (likely(target_lh == lh)) {
-            local_free(lh, dc, ptr);
-        } else {
-            check_init();
-            lh = local_heap;
-            remote_free(lh, dc, ptr);
-        }
+    dchunk_t *dc = dchunk_extract(ptr);
+    lheap_t *lh = local_heap;
+    lheap_t *target_lh = dc->owner;
+
+    if (likely(target_lh == lh)) {
+        local_free(lh, dc, ptr);
+    } else if(likely(target_lh != LARGE_OWNER)){
+        check_init();
+        lh = local_heap;
+        remote_free(lh, dc, ptr);
     } else {
         large_free(ptr);
     }
 }
 
-void *realloc(void *ptr, size_t size)
+void *realloc(void* ptr, size_t size)
 {
-    if (likely(is_small_object(ptr))) {   /* A small block */
-        dchunk_t *dc = dchunk_extract(ptr);
+    /* Handle special cases */
+    if (ptr == NULL) {
+        void *ret = malloc(size);
+        return ret;
+    }
+
+    if (size == 0) {
+        free(ptr);
+    }
+
+    dchunk_t *dc = dchunk_extract(ptr);
+    if (dc->owner != LARGE_OWNER) {
         int old_size = cls2size[dc->size_cls];
 
         /* Not exceed the current size, return */
@@ -664,31 +706,37 @@ void *realloc(void *ptr, size_t size)
         void *new_ptr = malloc(size);
         memcpy(new_ptr, ptr, old_size);
         free(ptr);
-
         return new_ptr;
+    } else {
+        large_header_t *header = (large_header_t *)dc;
+        size_t alloc_size = header->alloc_size;
+        void* mem = header->mem;
+        size_t offset = (uintptr_t)ptr - (uintptr_t)mem;
+        size_t old_size = alloc_size - offset;
 
-    } else { /* A large block */
+        /* Not exceed the current size, return */
+        if(size <= old_size) {
+            return ptr;
+        }
+        
+        /* Try to do mremap */
+        int new_size = PAGE_ROUNDUP(size + CHUNK_SIZE);
+        mem = mremap(mem, alloc_size, new_size, MREMAP_MAYMOVE);
+        void* mem_start = (void*)((uintptr_t)mem + offset);
+        header = (large_header_t*)dchunk_extract(mem_start);
 
-        if (ptr == NULL) {
-            void *ret = malloc(size);
-            return ret;
+        intptr_t distance = (intptr_t)mem_start - (intptr_t)header;
+        if (distance >= sizeof(large_header_t)) {
+            header->alloc_size = new_size;
+            header->mem = mem;
+            header->owner = LARGE_OWNER;
+            return mem_start;
         }
 
-        struct large_header *header = ((struct large_header *)ptr) - 1;
-        int old_size = header->size;
-        int new_size = PAGE_ROUNDUP(size + sizeof(struct large_header));
-
-        if (new_size < old_size)
-            return ptr;
-
-        struct large_header *new_header =
-            mremap(header, old_size, new_size, MREMAP_MAYMOVE);
-        new_header->size = new_size;
-
-        if (new_header == (void *)-1)
-            printf("mremap failed!\n");
-
-        return new_header + 1;
+        void* new_ptr = large_malloc(size);
+        memcpy(new_ptr, mem_start, old_size);
+        free(mem);
+        return new_ptr; 
     }
 }
 
@@ -702,14 +750,19 @@ void *calloc(size_t nmemb, size_t size)
     return memset(ptr, 0, nmemb * size);
 }
 
-void *memalign(size_t boundary, size_t size)
-{
-    void *p;
-    p = malloc((size + boundary - 1) & ~(boundary - 1));
-    if (!p) {
-        return NULL;
+void *memalign(size_t boundary, size_t size) {
+    /* Deal with zero-size allocation */
+    size += (size == 0);
+    if(boundary <= 256 && size <= 65536) {
+        /* In this case, we handle it as small allocations */
+        int boundary_cls = size2cls(boundary);
+        int size_cls = size2cls(size);
+        int alloc_cls = max(boundary_cls, size_cls);
+        return small_malloc(size, alloc_cls);
+    } else {
+        /* Handle it as a special large allocation */
+        return large_memalign(boundary, size);
     }
-    return (void *)(((unsigned long)p + boundary - 1) & ~(boundary - 1));
 }
 
 int posix_memalign(void **memptr, size_t alignment, size_t size)

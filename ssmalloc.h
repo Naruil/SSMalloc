@@ -35,7 +35,6 @@
 #define RAW_POOL_TOP        ((void*)0x700000000000)
 #define MAX_FREE_SIZE       (4*1024*1024)
 #define MAX_FREE_CHUNK      (MAX_FREE_SIZE/CHUNK_SIZE)
-
 #define BLOCK_BUF_CNT       (16)
 
 /* Other */
@@ -49,6 +48,7 @@
 
 /* Other Macros */
 #define ALLOC_UNIT (4 * 1024 * 1024)
+#define LARGE_OWNER ((void*)0xDEAD)
 #define CACHE_ALIGN __attribute__ ((aligned (CACHE_LINE_SIZE)))
 #define ACTIVE ((void*)1)
 #define THREAD_LOCAL __attribute__ ((tls_model ("initial-exec"))) __thread
@@ -104,13 +104,15 @@ typedef struct gpool_s gpool_t;
 typedef struct dchunk_s dchunk_t;
 typedef struct chunk_s chunk_t;
 typedef struct obj_buf_s obj_buf_t;
+typedef struct large_header_s large_header_t;
 
 typedef double_list_t LinkedList;
 typedef double_list_elem_t LinkedListElem;
 
-struct large_header {
-    CACHE_ALIGN uint32_t size;
-    CACHE_ALIGN lheap_t * owner;
+struct large_header_s {
+    CACHE_ALIGN size_t alloc_size;
+    void* mem;
+    CACHE_ALIGN lheap_t *owner;
 };
 
 struct chunk_s {
@@ -125,7 +127,7 @@ struct dchunk_s {
     uint32_t numa_node;
 
     /* Read Area */
-     CACHE_ALIGN lheap_t * owner;
+    CACHE_ALIGN lheap_t * owner;
     uint32_t size_cls;
 
     /* Local Write Area */
@@ -133,7 +135,6 @@ struct dchunk_s {
     uint32_t free_blk_cnt;
     uint32_t blk_cnt;
     SeqQueue free_head;
-    dchunk_t *next_dc;
     uint32_t block_size;
     char *free_mem;
 
