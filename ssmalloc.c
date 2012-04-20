@@ -503,15 +503,15 @@ inline static void large_free(void *ptr)
 
 inline static void local_free(lheap_t * lh, dchunk_t * dc, void *ptr)
 {
-    /* Return object to memory chunk */
     unsigned int free_blk_cnt = ++dc->free_blk_cnt;
     seq_queue_put(&dc->free_head, ptr);
 
-    /* Maintain memory chunk state */
-    dchunk_state state = dc->state;
-    if(likely(state == FOREGROUND)) {
-        return;
-    } else if (likely(state == BACKGROUND)) {
+    switch (dc->state) {
+    case FULL:
+        double_list_insert_front(dc, &lh->background[dc->size_cls]);
+        dc->state = BACKGROUND;
+        break;
+    case BACKGROUND:
         if (unlikely(free_blk_cnt == dc->blk_cnt)) {
             int free_cnt = lh->free_cnt;
             double_list_remove(dc, &lh->background[dc->size_cls]);
@@ -523,11 +523,10 @@ inline static void local_free(lheap_t * lh, dchunk_t * dc, void *ptr)
                 lh->free_cnt = free_cnt + 1;
             }
         }
-        return;
-    } else {
-        double_list_insert_front(dc, &lh->background[dc->size_cls]);
-        dc->state = BACKGROUND;
-        return;
+        break;
+    case FOREGROUND:
+        /* Tada.. */
+        break;
     }
 }
 
