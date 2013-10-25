@@ -2,6 +2,7 @@ CFLAGS += -O3 -Wstrict-prototypes -fomit-frame-pointer -g -Wall
 libdir = /usr/lib
 LDFLAGS += -lpthread -rpath $(libdir) -version-info 1
 CC = gcc
+CXX = g++
 LD = ld
 ARCH = $(shell uname -m)
 
@@ -21,16 +22,23 @@ define compile_rule
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Iinclude-$(ARCH) -c $<
 endef
 
+define cxx_compile_rule
+	libtool --mode=compile --tag=CC \
+	$(CXX) $(CFLAGS) $(CPPFLAGS) -Iinclude-$(ARCH) -c $<
+endef
+
 define link_rule
 	libtool --mode=link --tag=CC \
 	$(LD) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 endef
 
 LIBS = libssmalloc.la
-libssmalloc_OBJS = ssmalloc.lo
+libssmalloc_OBJS = ssmalloc.lo new_delete.lo
 
 %.lo: %.c
 	$(call compile_rule)
+%.lo: %.cpp
+	$(call cxx_compile_rule)
 
 all: libssmalloc.la
 
