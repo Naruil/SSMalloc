@@ -1,8 +1,8 @@
 #ifndef __DOUBLE_LIST_H_
 #define __DOUBLE_LIST_H_
 
-typedef struct double_list_elem		double_list_elem_t;
-typedef struct double_list		        double_list_t;
+typedef struct double_list_elem	double_list_elem_t;
+typedef struct double_list double_list_t;
 
 struct double_list_elem {
 	void* __padding;
