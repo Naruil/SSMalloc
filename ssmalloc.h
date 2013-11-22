@@ -53,18 +53,18 @@
 #define queue_init(head)\
     mc_queue_init(head)
 #define queue_put(head,elem)\
-    mc_enqueue(head,elem)
+    mc_enqueue(head,elem,0)
 #define queue_fetch(head)\
-    mc_dequeue(head)
+    mc_dequeue(head,0)
 typedef queue_head_t Queue;
 
 /* Single consumer queue */
 #define fast_queue_init(head)\
     sc_queue_init(head)
 #define fast_queue_put(head,elem)\
-    sc_enqueue(head,elem)
+    sc_enqueue(head,elem,0)
 #define fast_queue_fetch(head)\
-    sc_dequeue(head)
+    sc_dequeue(head,0)
 #define fast_queue_chain_fetch(head)\
     sc_chain_dequeue(head)
 typedef queue_head_t FastQueue;
