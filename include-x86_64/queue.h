@@ -155,7 +155,7 @@ static inline void* counted_enqueue(queue_head_t *queue, void* elem) {
         new_head = (ptr_t)elem;
         new_head |= ABA_COUNT(old_head) + ABA_COUNT_ONE;
         
-    } while((prev=compare_and_swap64_out (
+    } while((prev=compare_and_swap64_value (
             &queue->head,
             old_head,
             new_head
@@ -172,7 +172,7 @@ static inline void* counted_chain_enqueue(queue_head_t *queue, void* elems, void
         new_head = (ptr_t)elems;
         new_head |= ABA_COUNT(old_head) + ABA_COUNT_ONE * cnt;
 
-    } while((prev=compare_and_swap64_out (
+    } while((prev=compare_and_swap64_value (
             &queue->head,
             old_head,
             new_head

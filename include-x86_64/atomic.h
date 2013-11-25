@@ -66,6 +66,19 @@ static inline unsigned int compare_and_swap32(volatile unsigned int *address, un
 	return prev == old_value;
 }
 
+static inline unsigned int compare_and_swap32_value(volatile unsigned int *address, unsigned int old_value, unsigned int new_value)
+{
+	unsigned long prev = 0;
+
+	asm volatile(LOCK_PREFIX "cmpxchgl %k1,%2"
+		: "=a"(prev)
+		: "r"(new_value), "m"(*address), "0"(old_value)
+		: "memory");
+
+	return prev;
+}
+
+
 static inline unsigned int compare_and_swap64(volatile unsigned long long *address, unsigned long old_value, unsigned long new_value)
 {
 	unsigned long prev = 0;
@@ -78,7 +91,7 @@ static inline unsigned int compare_and_swap64(volatile unsigned long long *addre
 	return prev == old_value;
 }
 
-static inline unsigned long compare_and_swap64_out(volatile unsigned long long *address, unsigned long old_value, unsigned long new_value)
+static inline unsigned long compare_and_swap64_value(volatile unsigned long long *address, unsigned long old_value, unsigned long new_value)
 {
 	unsigned long prev = 0;
 
